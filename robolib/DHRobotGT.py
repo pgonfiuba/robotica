@@ -32,11 +32,14 @@ class DHRobotGT(DHRobot):
         # Vectores que almacenan la referencia y la simulación para uso posterior / plotting
         self.q_sim = []
         self.qd_sim = []
+        self.qd_sim_f = []
         self.q_ref = []
         self.qd_ref = []
         self.qdd_ref = []
         self.t_ref = []
         self.u = []
+
+        self.Nr = np.diag([link.G for link in self.links])
 
 
     def get_control_ref(self, t):
@@ -237,18 +240,19 @@ class DHRobotGT(DHRobot):
       return tg.t, tg.q , tg.qd, None      
 
 
-    def sim_dis_control(self, control_law_func, solver_kwargs=None):
+    def sim_dis_control(self, control_law_func, omega_f=None, solver_kwargs=None):
       """
       Simulación discreta por integración por pasos de tamaño Ts.
       
       control_law_func: función (robot, t, q, qd) -> tau (vector de torques) que
                         devuelve la entrada a aplicar en cada paso.
+      omega_f: ancho de banda del filtro pasa bajos de la velocidad
       
       Estrategia:
         - Itera sobre muestras en self.t_ref. En cada paso calcula la ley de control
           con el estado simulado anterior y aplica esa entrada durante un intervalo
           Ts resolviendo un fdyn corto para obtener el siguiente estado.
-        - Almacena histéresis de entradas, q_sim y qd_sim.
+        - Almacena históricos de entradas, q_sim y qd_sim.
       
       Comentarios:
         - Es una manera simple y didáctica de simular control discreto contra un
@@ -261,30 +265,38 @@ class DHRobotGT(DHRobot):
             'rtol': 1e-6     # Tolerancia relativa
         }
 
+      if omega_f is None:
+         alpha = 0
+      else:
+         alpha = np.exp(-omega_f*self.Ts)
       # Inicializo vectores para simulacion
       self.u = np.zeros_like(self.q_ref)
       self.q_sim = np.zeros_like(self.q_ref)
       self.qd_sim = np.zeros_like(self.qd_ref)
+      self.qd_sim_f = np.zeros_like(self.qd_ref)
 
       # La condición inicial sale de la primera muestra de las referencias
       self.q_sim[0, :] = self.q_ref[0, :]
       self.qd_sim[0, :] = self.qd_ref[0, :]
+      self.qd_sim_f[0, :] = self.qd_ref[0, :]
 
 
       # Realizo la simulación por pasos
       for idx in tqdm(range(1, len(self.t_ref))):        
         # Calculo la ley de control discreta usando el estado simulado anterior
-        self.u[idx, :] = control_law_func(self, self.t_ref[idx], self.q_sim[idx-1], self.qd_sim[idx-1])
+        self.u[idx, :] = control_law_func(self, self.t_ref[idx], self.q_sim[idx-1], self.qd_sim_f[idx-1])
 
         # Integro durante Ts partiendo del último estado simulado y aplicando u constante
         tg = self.nofriction(coulomb=True, viscous=False).fdyn(self.Ts, 
                                                                 self.q_sim[idx-1],
-                                                                qd0=self.qd_sim[idx-1],
+                                                                qd0=self.qd_sim_f[idx-1],
                                                                 Q=lambda r, t, q, qd: self.u[idx],                                                          
                                                                 solver_args=solver_kwargs)
         # Tomo la última muestra devuelta por el integrador como nuevo estado
         self.q_sim[idx] = tg.q[-1, :]
         self.qd_sim[idx] = tg.qd[-1, :]
+        # Filtro la medición de velocidad
+        self.qd_sim_f[idx] = alpha * self.qd_sim_f[idx-1] + (1-alpha) * self.qd_sim[idx]
 
       return self.t_ref, self.q_sim, self.qd_sim, self.u
 

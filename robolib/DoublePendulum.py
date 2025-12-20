@@ -40,13 +40,13 @@ class DoublePendulum(DHRobotGT):
         eje1 = rtb.RevoluteDH(a=0.2,alpha=0,m=1,
             r=np.array([-0.1, 0, 0]),
             I=np.array([0,0,0,0,0,0,0,0,1E-3]),
-            #Jm=1E-5,
-            B=0, G=1)
+            #Jm=1E-4,
+            B=0.0, G=1)
         eje2 = rtb.RevoluteDH(a=0.2,alpha=0,m=1.5,
             r=np.array([-0.1, 0, 0]),
             I=np.array([0,0,0,0,0,0,0,0,1E-4]),
-            #Jm=1E-5,
-            B=0, G=1)
+            #Jm=1E-4,
+            B=0.0, G=1)    
 
         # Crear la estructura del robot: llamo al constructor de DHRobotGT
         super().__init__([eje1, eje2], name='DoublePendulum',
